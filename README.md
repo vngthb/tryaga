@@ -1,6 +1,6 @@
 # TRY AGAin - your default retry with backoff in Erlang.
 
-### Default timeout curve in a configuration of 5 attempts with a total duration of 5000 seconds:
+### Default timeout curve in a configuration of 5 attempts with a total duration of 5000 milliseconds:
 ```mermaid
 ---
 config:
@@ -20,7 +20,7 @@ xychart-beta
     line [369, 559, 847, 1283, 1943]
 ```
 
-### Aggressive timeout curve in a configuration of 5 attempts with a total duration of 5000 seconds:
+### Aggressive timeout curve in a configuration of 5 attempts with a total duration of 5000 milliseconds:
 
 ```mermaid
 ---
