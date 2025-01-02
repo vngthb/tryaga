@@ -5,29 +5,48 @@
 -define(DEFAULT_FACTOR, 0.66).
 
 -export([
-    apply/3
+    apply/3,
+    apply/4
 ]).
 
-% -type configuration() :: #{
-%     retries => pos_integer(),
-%     duration => pos_integer(),
-%     base => pos_integer(),
-%     factor => pos_integer(),
-%     log => function(),
-%     jitter => false | slight | half | full
-% }.
+-type configuration() :: #{
+    retries => pos_integer(),
+    duration => pos_integer(),
+    base => pos_integer(),
+    factor => pos_integer(),
+    log_fun => function(),
+    jitter => false | slight | half | full
+}.
 
+-spec apply(Function, Predicate, Configuration) ->Result
+    when Function :: function(),
+         Predicate :: function(),
+         Configuration :: configuration(),
+         Result :: {ok, Term} | {error, Term}.
 apply(Function, Predicate, Configuration0 = #{retries := 0}) ->
     Configuration1 = validate(Configuration0),
     Configuration2 = Configuration1#{base => undefined},
-    apply(internal, Function, Predicate, Configuration2);
+    apply0(Function, Predicate, Configuration2);
 apply(Function, Predicate, Configuration0) ->
     Configuration1 = validate(Configuration0),
     Base = base(Configuration1),
     Configuration2 = Configuration1#{base => Base},
-    apply(internal, Function, Predicate, Configuration2).
+    apply0(Function, Predicate, Configuration2).
 
-apply(internal, Function, Predicate, Configuration) ->
+-spec apply(Function, Predicate, Retries, Duration) -> Result
+    when Function :: function(),
+         Predicate :: function(),
+         Retries :: pos_integer(),
+         Duration :: pos_integer(),
+         Result :: {ok, Term} | {error, Term}.
+apply(Function, Predicate, Retries, Duration) ->
+    Configuration = #{
+        retries => Retries,
+        duration => Duration
+    },
+    tryaga:apply(Function, Predicate, Configuration).
+
+apply0(Function, Predicate, Configuration) ->
     #{
         retries := Retries,
         base := Base,
@@ -46,7 +65,7 @@ apply(internal, Function, Predicate, Configuration) ->
             Timeout2 = jitter(Timeout1, Jitter),
             LogFun(Result, Timeout2, Configuration),
             timer:sleep(Timeout2),
-            apply(internal, Function, Predicate, Configuration#{retries => Retries - 1})
+            apply0(Function, Predicate, Configuration#{retries => Retries - 1})
     end.
 
 base(#{retries := Retries, duration := Duration, factor := Factor}) ->
@@ -96,7 +115,7 @@ ensure_factor(#{factor := Factor})
   when Factor < 0; Factor >= 1 ->
     Ex = #{
         factor => invalid,
-        comment => <<"Factor should be greater or equal to 0 and less than 1.">>
+        comment => <<"Factor should be greater than or equal to 0 and less than 1.">>
     },
     throw(Ex);
 ensure_factor(Configuration) ->
@@ -109,7 +128,7 @@ ensure_duration(#{duration := Duration})
   when Duration =< 0 ->
     Ex = #{
         duration => invalid,
-        comment => <<"Duration should not be less or equal to 0.">>
+        comment => <<"Duration should not be less than or equal to 0.">>
     },
     throw(Ex);
 ensure_duration(_Configuration) ->
@@ -126,7 +145,7 @@ ensure_retries(#{retries := Retries})
   when Retries < 0 ->
     Ex = #{
         retries => invalid,
-        comment => <<"The number of retries should not be less than 0">>
+        comment => <<"The number of retries should not be less than 0.">>
     },
     throw(Ex);
 ensure_retries(Configuration) ->
@@ -139,7 +158,7 @@ ensure_log(#{log_fun := LogFun})
   when not is_function(LogFun, 3) ->
     Ex = #{
         log_fun => invalid,
-        comment => <<"The log function needs to be a function with an arity of 3">>
+        comment => <<"The log function needs to be a function with an arity of 3.">>
     },
     throw(Ex);
 ensure_log(Configuration) ->
