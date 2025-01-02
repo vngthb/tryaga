@@ -15,7 +15,7 @@
     base => pos_integer(),
     factor => pos_integer(),
     log_fun => function(),
-    jitter => false | slight | half | full
+    jitter => pos_integer()
 }.
 
 -spec apply(Function, Predicate, Configuration) ->Result
@@ -71,15 +71,9 @@ apply0(Function, Predicate, Configuration) ->
 base(#{retries := Retries, duration := Duration, factor := Factor}) ->
     Duration * (1 - Factor) / (1 - math:pow(Factor, Retries)).
 
-jitter(Timeout0, false) ->
-    Timeout0;
-jitter(Timeout0, slight) ->
-    Diff = Timeout0 div 10,
-    rand:uniform(Diff) + Timeout0 - Diff;
-jitter(Timeout0, half) ->
-    rand:uniform(Timeout0 div 2) + Timeout0 div 2;
-jitter(Timeout0, full) ->
-    rand:uniform(Timeout0).
+jitter(Timeout0, Ratio) ->
+    Diff = round(Timeout0 * Ratio),
+    rand:uniform(Diff) + Timeout0 - Diff.
 
 validate(Configuration) ->
     ValidationFuns = [
@@ -93,19 +87,19 @@ validate(Configuration) ->
     lists:foldl(FoldlFun, Configuration, ValidationFuns).
 
 ensure_jitter(Configuration = #{jitter := Jitter})
-  when Jitter == false;
-       Jitter == slight;
-       Jitter == half;
-       Jitter == full ->
+  when Jitter > 0,
+       Jitter =< 1 ->
     Configuration;
-ensure_jitter(#{jitter := _Jitter}) ->
+ensure_jitter(#{jitter := Jitter})
+  when Jitter =< 0;
+       Jitter > 1 ->
     Ex = #{
         jitter => invalid,
-        comment => <<"Jitter should be set to either false, slight, half and full.">>
+        comment => <<"Jitter should be greater than 0 and less than or equal to 1.">>
     },
     throw(Ex);
 ensure_jitter(Configuration) ->
-    Configuration#{jitter => false}.
+    Configuration#{jitter => 0}.
 
 ensure_factor(Configuration = #{factor := Factor})
   when Factor >= 0,
