@@ -6,7 +6,8 @@
 
 -export([
     apply/3,
-    apply/4
+    apply/4,
+    describe/1
 ]).
 
 -type configuration() :: #{
@@ -46,34 +47,43 @@ apply(Function, Predicate, Retries, Duration) ->
     },
     tryaga:apply(Function, Predicate, Configuration).
 
-apply0(Function, Predicate, Configuration) ->
-    #{
-        retries := Retries,
-        base := Base,
-        factor := Factor,
-        jitter := Jitter,
-        log_fun := LogFun
-    } = Configuration,
+describe(Configuration0) ->
+    Configuration1 = validate(Configuration0),
+    Configuration2 = Configuration1#{base => base(Configuration1)},
+    #{retries := Retries} = Configuration2,
+    FoldrFun = 
+        fun(R, A) ->
+            T = timeout(Configuration2#{retries => R}),
+            A ++ [T]
+        end,
+    lists:foldr(FoldrFun, [], lists:seq(1, Retries)).
+
+apply0(Function, Predicate, #{retries := Retries, log_fun := LogFun} = Configuration) ->
     Result = Function(),
     Expected = Predicate(Result),
     if
         Expected == true -> {ok, Result};
         Retries == 0 -> {error, Result};
         true -> 
-            Timeout0 = Base * math:pow(Factor, Retries - 1),
-            Timeout1 = round(Timeout0),
-            Timeout2 = jitter(Timeout1, Jitter),
-            LogFun(Result, Timeout2, Configuration),
-            timer:sleep(Timeout2),
+            Timeout = timeout(Configuration),
+            LogFun(Result, Timeout, Configuration),
+            timer:sleep(Timeout),
             apply0(Function, Predicate, Configuration#{retries => Retries - 1})
     end.
 
 base(#{retries := Retries, duration := Duration, factor := Factor}) ->
     Duration * (1 - Factor) / (1 - math:pow(Factor, Retries)).
 
-jitter(Timeout0, Ratio) ->
-    Diff = round(Timeout0 * Ratio),
-    rand:uniform(Diff) + Timeout0 - Diff.
+timeout(#{base := Base, factor := Factor, retries := Retries, jitter := Jitter}) ->
+    Timeout0 = Base * math:pow(Factor, Retries - 1),
+    Timeout1 = round(Timeout0),
+    Diff = round(Timeout1 * Jitter),
+    rand(Diff) + Timeout1 - Diff.
+
+rand(0) ->
+    0;
+rand(Diff) ->
+    rand:uniform(Diff).
 
 validate(Configuration) ->
     ValidationFuns = [
