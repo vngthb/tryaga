@@ -130,3 +130,7 @@ xychart-beta
     bar [40, 121, 366, 1110, 3363]
     line [40, 121, 366, 1110, 3363]
 ```
+
+### todos
+- add proper docs
+- clean up code
