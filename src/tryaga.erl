@@ -23,7 +23,7 @@
     when Function :: function(),
          Predicate :: function(),
          Configuration :: configuration(),
-         Result :: {ok, Term} | {error, Term}.
+         Result :: {ok, term()} | {error, term()}.
 apply(Function, Predicate, Configuration0 = #{retries := 0}) ->
     Configuration1 = tryaga_configuration:ensure_validity(Configuration0),
     Configuration2 = Configuration1#{base => undefined},
@@ -39,7 +39,7 @@ apply(Function, Predicate, Configuration0) ->
          Predicate :: function(),
          Retries :: pos_integer(),
          Duration :: pos_integer(),
-         Result :: {ok, Term} | {error, Term}.
+         Result :: {ok, term()} | {error, term()}.
 apply(Function, Predicate, Retries, Duration) ->
     Configuration = #{
         retries => Retries,
