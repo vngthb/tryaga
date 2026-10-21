@@ -1,6 +1,8 @@
 -module(tryaga).
-
--include_lib("kernel/include/logger.hrl").
+-compile({no_auto_import, [apply/3]}).
+-moduledoc """
+Synchronous retries with geometric backoff and optional jitter.
+""".
 
 -export([
     apply/3,
@@ -8,82 +10,101 @@
     describe/1
 ]).
 
+-export_type([configuration/0, milliseconds/0, logger/0]).
+
 -type configuration() :: #{
-    retries => pos_integer(),
-    duration => milliseconds(),
-    base => milliseconds(),
-    factor => float(),
-    jitter => float(),
-    logger => function()
+    duration := pos_integer(),
+    retries => non_neg_integer(),
+    factor => number(),
+    jitter => number(),
+    logger => logger()
 }.
 
--type milliseconds() :: pos_integer().
+-type milliseconds() :: non_neg_integer().
+-type logger() :: fun((term(), milliseconds(), map()) -> term()).
 
+-doc """
+Call `Function` immediately, retrying until `Predicate` returns `true`.
+
+Returns `{ok, Result}` when accepted or `{exhausted, LastResult}` when retries run out.
+Configuration errors are thrown as maps. Callback exceptions propagate.
+The caller sleeps between attempts; `duration` is a sleep budget, not a deadline.
+""".
 -spec apply(Function, Predicate, Configuration) -> Result
-    when Function :: function(),
-         Predicate :: function(),
+    when Function :: fun(() -> Term),
+         Predicate :: fun((Term) -> boolean()),
          Configuration :: configuration(),
-         Result :: {ok, Term} | {error, Term}.
-apply(Function, Predicate, Configuration0 = #{retries := 0}) ->
-    Configuration1 = tryaga_configuration:ensure_validity(Configuration0),
-    Configuration2 = Configuration1#{base => undefined},
-    apply0(Function, Predicate, Configuration2);
+         Result :: {ok, Term} | {exhausted, Term},
+         Term :: term().
 apply(Function, Predicate, Configuration0) ->
-    Configuration1 = tryaga_configuration:ensure_validity(Configuration0),
-    Base = assess_base(Configuration1),
-    Configuration2 = Configuration1#{base => Base},
-    apply0(Function, Predicate, Configuration2).
+    retry(Function, Predicate, prepare(Configuration0)).
 
+-doc """
+Retry using the default factor (0.66), no jitter, and no logging.
+
+`Retries` counts additional attempts after the first call; zero calls once.
+""".
 -spec apply(Function, Predicate, Retries, Duration) -> Result
-    when Function :: function(),
-         Predicate :: function(),
-         Retries :: pos_integer(),
+    when Function :: fun(() -> Term),
+         Predicate :: fun((Term) -> boolean()),
+         Retries :: non_neg_integer(),
          Duration :: pos_integer(),
-         Result :: {ok, Term} | {error, Term}.
+         Result :: {ok, Term} | {exhausted, Term},
+         Term :: term().
 apply(Function, Predicate, Retries, Duration) ->
     Configuration = #{
         retries => Retries,
         duration => Duration
     },
-    tryaga:apply(Function, Predicate, Configuration).
+    apply(Function, Predicate, Configuration).
 
+-doc """
+Return delays in execution order without sleeping or calling the logger.
+
+Zero retries returns an empty list. With jitter, each call samples new delays
+and consumes random state in the calling process. Without jitter, the delays
+sum to `duration` when at least one retry is configured.
+""".
 -spec describe(Configuration) -> Result
     when Configuration :: configuration(),
-         Result :: [pos_integer()].
+         Result :: [milliseconds()].
 describe(Configuration0) ->
-    Configuration1 = tryaga_configuration:ensure_validity(Configuration0),
-    Configuration2 = Configuration1#{base => assess_base(Configuration1)},
-    #{retries := Retries} = Configuration2,
-    FoldrFun = 
-        fun(Retry, Acc) ->
-            Timeout = compute_timeout(Configuration2#{retries => Retry}),
-            Acc ++ [Timeout]
-        end,
-    lists:foldr(FoldrFun, [], lists:seq(1, Retries)).
+    Configuration = prepare(Configuration0),
+    #{retries := Retries} = Configuration,
+    [compute_delay(Configuration#{retries => Retry})
+     || Retry <- lists:seq(Retries, 1, -1)].
 
-apply0(Function, Predicate, #{retries := Retries, logger := Logger} = Configuration) ->
+prepare(Configuration0) ->
+    Configuration = tryaga_configuration:ensure_validity(Configuration0),
+    Configuration#{base => assess_base(Configuration)}.
+
+retry(Function, Predicate, #{retries := Retries, logger := Logger} = Configuration) ->
     Result = Function(),
-    Expected = Predicate(Result),
-    if
-        Expected == true -> {ok, Result};
-        Retries == 0 -> {error, Result};
-        true -> 
-            Timeout = compute_timeout(Configuration),
-            Logger(Result, Timeout, Configuration),
-            timer:sleep(Timeout),
-            apply0(Function, Predicate, Configuration#{retries => Retries - 1})
+    case Predicate(Result) of
+        true -> {ok, Result};
+        _ when Retries =:= 0 -> {exhausted, Result};
+        _ ->
+            Delay = compute_delay(Configuration),
+            Logger(Result, Delay, Configuration),
+            timer:sleep(Delay),
+            retry(Function, Predicate, Configuration#{retries => Retries - 1})
     end.
 
+assess_base(#{retries := 0}) ->
+    undefined;
 assess_base(#{retries := Retries, duration := Duration, factor := Factor}) ->
     Duration * (1 - Factor) / (1 - math:pow(Factor, Retries)).
 
-compute_timeout(#{base := Base, factor := Factor, retries := Retries, jitter := Jitter}) ->
-    Timeout0 = Base * math:pow(Factor, Retries - 1),
-    Timeout1 = round(Timeout0),
-    Diff = round(Timeout1 * Jitter),
-    rand(Diff) + Timeout1 - Diff.
+compute_delay(#{base := Base, factor := Factor, retries := Retries, jitter := Jitter}) ->
+    %% Differences of rounded cumulative budgets avoid per-delay rounding drift.
+    Delay = remaining_budget(Retries, Base, Factor) -
+            remaining_budget(Retries - 1, Base, Factor),
+    jitter(Delay, round(Delay * Jitter)).
 
-rand(0) ->
-    0;
-rand(Diff) ->
-    rand:uniform(Diff).
+remaining_budget(Retries, Base, Factor) ->
+    round(Base * (1 - math:pow(Factor, Retries)) / (1 - Factor)).
+
+jitter(Delay, 0) ->
+    Delay;
+jitter(Delay, Spread) ->
+    Delay - Spread + rand:uniform(Spread).

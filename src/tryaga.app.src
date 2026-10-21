@@ -1,5 +1,5 @@
 {application, tryaga, [
-    {description, "Your default retry with backoff in Erlang"},
+    {description, "Synchronous retries with backoff and jitter"},
     {vsn, "0.1.0"},
     {registered, []},
     {applications, [
@@ -8,6 +8,6 @@
     ]},
     {env, []},
     {modules, []},
-    {licenses, ["Apache 2.0"]},
-    {links, []}
+    {licenses, ["Unlicense"]},
+    {links, [{"GitHub", "https://github.com/vngthb/tryaga"}]}
 ]}.
