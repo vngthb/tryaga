@@ -16,7 +16,7 @@ Add tryaga to your application's `rebar.config`:
 ]}.
 ```
 
-Use a commit reference instead of a branch when you need a fixed dependency.
+Use a tag or commit reference instead of a branch when you need a fixed dependency.
 
 ## Quick start
 
@@ -66,12 +66,7 @@ Exceptions from the function, predicate, or logger propagate to the caller and
 stop retrying. To retry an exception, handle it inside your function and return
 a value the predicate can inspect.
 
-### Compatibility
-
-Exhaustion now returns `{exhausted, LastResult}` instead of `{error, LastResult}`.
-Update callers that match the outer error tag. Individual retry delays can also
-differ from earlier versions because cumulative rounding now preserves the
-configured sleep budget.
+See [the changelog](CHANGELOG.md) for changes and compatibility notes.
 
 ## Configuration
 
@@ -160,4 +155,4 @@ backoff boundaries, and jitter bounds without external services.
 
 ## License
 
-[The Unlicense](LICENSE).
+[Apache License 2.0](LICENSE).
